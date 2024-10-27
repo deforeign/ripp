@@ -11,6 +11,8 @@ export const INITIAL_USER = {
   email: "",
   imageUrl: "",
   bio: "",
+  $id: "",  // Add this property
+  flag: "", // Add this property
 };
 
 const INITIAL_STATE = {
@@ -51,6 +53,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: currentAccount.email,
           imageUrl: currentAccount.imageUrl,
           bio: currentAccount.bio,
+          $id: currentAccount.$id || "",  // Default value if missing
+          flag: currentAccount.flag || "", // Default value if missing
         });
         setIsAuthenticated(true);
 

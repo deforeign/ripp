@@ -16,10 +16,11 @@ export type IUpdateUser = {
 export type INewPost = {
   userId: string;
   caption: string;
-  file: File[];
+  file?: File[]; // Making file optional
   location?: string;
   tags?: string;
 };
+
 
 export type IUpdatePost = {
   postId: string;
@@ -32,13 +33,16 @@ export type IUpdatePost = {
 };
 
 export type IUser = {
-  id: string;
+  $id: string; // Add $id
+  id: string; // Assuming this is needed
+  flag: false; // Add flag
   name: string;
   username: string;
   email: string;
   imageUrl: string;
   bio: string;
 };
+
 
 export type INewUser = {
   name: string;
