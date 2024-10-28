@@ -3,7 +3,7 @@ import { FileWithPath, useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui";
 import { convertFileToUrl } from "@/lib/utils";
 import axios from "axios";
-import { Query, Client, Databases, Storage } from "appwrite";
+import { ID, Query, Client, Databases, Storage } from "appwrite";
 
 // Environment variables
 const APPWRITE_PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID;
@@ -12,15 +12,16 @@ const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
 const USER_COLLECTION_ID = import.meta.env.VITE_APPWRITE_USER_COLLECTION_ID;
 const IMAGE_COLLECTION_ID = import.meta.env.VITE_APPWRITE_POST_COLLECTION_ID;
 const STORAGE_BUCKET_ID = import.meta.env.VITE_APPWRITE_STORAGE_ID;
-const ML_API_URL = "https://detect.roboflow.com/drug_detection_project/9"; // Your ML model API URL
-const ML_API_KEY = "Ajvqkk4nNlEiT1PUvWWD"; // Your API key
+const ML_API_URL = "https://detect.roboflow.com/drug_detection_project/9";
+const ML_API_KEY = "Ajvqkk4nNlEiT1PUvWWD";
 
 type FileUploaderProps = {
   fieldChange: (files: File[]) => void;
   mediaUrl: string;
+  userId: string;
 };
 
-const FileUploader = ({ fieldChange, mediaUrl }: FileUploaderProps) => {
+const FileUploader = ({ fieldChange, mediaUrl, userId }: FileUploaderProps) => {
   const [file, setFile] = useState<File[]>([]);
   const [fileUrl, setFileUrl] = useState<string>(mediaUrl);
 
@@ -28,24 +29,44 @@ const FileUploader = ({ fieldChange, mediaUrl }: FileUploaderProps) => {
     async (acceptedFiles: FileWithPath[]) => {
       setFile(acceptedFiles);
       fieldChange(acceptedFiles);
-      const fileUrl = convertFileToUrl(acceptedFiles[0]);
-      setFileUrl(fileUrl);
+      const localFileUrl = convertFileToUrl(acceptedFiles[0]);
+      setFileUrl(localFileUrl);
 
       try {
-        // Upload the file to Appwrite Storage
+        // Initialize Appwrite client
         const client = new Client()
           .setEndpoint(APPWRITE_ENDPOINT)
           .setProject(APPWRITE_PROJECT_ID);
 
         const storage = new Storage(client);
+        const databases = new Databases(client);
+
+        // Upload the file to Appwrite Storage
         const appwriteFile = await storage.createFile(
           STORAGE_BUCKET_ID,
-          "unique()", // Generate a unique ID
+          ID.unique(),
           acceptedFiles[0]
         );
 
         const fileId = appwriteFile.$id;
         const fileUrl = `${APPWRITE_ENDPOINT}/storage/buckets/${STORAGE_BUCKET_ID}/files/${fileId}/view?project=${APPWRITE_PROJECT_ID}`;
+
+        // Create an image document with all required fields
+        const imageDocument = await databases.createDocument(
+          DATABASE_ID,
+          IMAGE_COLLECTION_ID,
+          ID.unique(),
+          {
+            imageId: fileId,  // Using storage file ID as imageId
+            imageUrl: fileUrl,
+            flag: false,
+            creator: userId,  // Adding creator field if required
+            caption: "",      // Adding empty caption if required
+            likes: [],       // Initialize empty likes array if required
+            tags: [],        // Initialize empty tags array if required
+            
+          }
+        );
 
         // Perform the ML prediction
         const response = await axios.post(ML_API_URL, null, {
@@ -61,15 +82,19 @@ const FileUploader = ({ fieldChange, mediaUrl }: FileUploaderProps) => {
 
           // Check if confidence is greater than 50%
           if (confidence * 100 > 50) {
-            // Update user and image flags in the Appwrite database
-            await updateAppwriteFlags(true);
+            // Update flags for the specific user and image
+            await updateAppwriteFlags(userId, imageDocument.$id, true);
           }
         }
       } catch (error) {
         console.error("Error uploading the file or fetching prediction:", error);
+        // Log more detailed error information
+        if (error instanceof Error) {
+          console.error("Error details:", error.message);
+        }
       }
     },
-    [file]
+    [userId]
   );
 
   const { getRootProps, getInputProps } = useDropzone({
@@ -79,56 +104,36 @@ const FileUploader = ({ fieldChange, mediaUrl }: FileUploaderProps) => {
     },
   });
 
-  // Function to update flags in Appwrite
-  // Function to update flags in Appwrite using a similar approach as fetchFlaggedUsers
-  const updateAppwriteFlags = async (flagValue: boolean) => {
+  const updateAppwriteFlags = async (userId: string, imageId: string, flagValue: boolean) => {
     try {
-      // Initialize Appwrite client
       const client = new Client()
         .setEndpoint(APPWRITE_ENDPOINT)
         .setProject(APPWRITE_PROJECT_ID);
-  
+
       const databases = new Databases(client);
-  
-      // Make sure the `flag` attribute exists in your collection schema
-      // Fetch the user document where the flag needs to be updated
-      const userResponse = await databases.listDocuments(DATABASE_ID, USER_COLLECTION_ID, [
-        Query.equal('flag', !flagValue) // Ensure 'flag' exists in the schema
-      ]);
-  
-      if (userResponse.documents.length > 0) {
-        const userId = userResponse.documents[0].$id;
-  
-        // Update the user flag
-        await databases.updateDocument(
-          DATABASE_ID,
-          USER_COLLECTION_ID,
-          userId,
-          { flag: flagValue }
-        );
-      }
-  
-      // Perform the same operation for the image collection
-      const imageResponse = await databases.listDocuments(DATABASE_ID, IMAGE_COLLECTION_ID, [
-        Query.equal('flag', !flagValue) // Again, ensure 'flag' exists in this schema
-      ]);
-  
-      if (imageResponse.documents.length > 0) {
-        const imageId = imageResponse.documents[0].$id;
-  
-        // Update the image flag
-        await databases.updateDocument(
-          DATABASE_ID,
-          IMAGE_COLLECTION_ID,
-          imageId,
-          { flag: flagValue }
-        );
-      }
+
+      // Update the specific user's flag
+      await databases.updateDocument(
+        DATABASE_ID,
+        USER_COLLECTION_ID,
+        userId,
+        { flag: flagValue }
+      );
+
+      // Update the specific image's flag
+      await databases.updateDocument(
+        DATABASE_ID,
+        IMAGE_COLLECTION_ID,
+        imageId,
+        { flag: flagValue }
+      );
     } catch (error) {
       console.error("Error updating flags in Appwrite:", error);
+      if (error instanceof Error) {
+        console.error("Error details:", error.message);
+      }
     }
   };
-  
 
   return (
     <div

@@ -33,11 +33,11 @@ export type IUpdatePost = {
 };
 
 export type IUser = {
+  username: string;
   $id: string; // Add $id
   id: string; // Assuming this is needed
   flag: false; // Add flag
   name: string;
-  username: string;
   email: string;
   imageUrl: string;
   bio: string;
